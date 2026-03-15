@@ -37,7 +37,7 @@ class IncrementalUF:
     
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  1. Nodo MCTS (RAVE/AMAF)
+#  2. Nodo MCTS (RAVE/AMAF)
 # ─────────────────────────────────────────────────────────────────────────────
 
 RAVE_K = 314
@@ -76,8 +76,34 @@ class SmartPlayer(Player):
     def __init__(self, player_id):
         super().__init__(player_id)
         
-        self._DIRS_ODD = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
-        self._DIRS_EVEN  = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
+        self._DIRS_ODD  = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
+        self._DIRS_EVEN = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
+
+        # Cache de vecindades: se construye la primera vez que se juega,
+        # o cuando el tamaño del tablero cambia.
+        self._nbrs_cache = {}   # (r, c) -> [(nr, nc), ...]
+        self._nbrs_cache_size = -1
+
+    # ── Cache de vecindades ──────────────────────────────────────────────────
+
+    def _build_nbrs_cache(self, size):
+        """Pre-calcula todos los vecinos válidos para cada celda del tablero.
+        
+        Se ejecuta una sola vez por tamaño de tablero. Convierte cada llamada
+        futura a _get_nbrs en un simple lookup O(1) en vez de construir una
+        lista nueva con comprobaciones de límites en cada llamada.
+        """
+        cache = {}
+        for r in range(size):
+            dirs = self._DIRS_EVEN if r % 2 == 0 else self._DIRS_ODD
+            for c in range(size):
+                cache[(r, c)] = [
+                    (r + dr, c + dc)
+                    for dr, dc in dirs
+                    if 0 <= r + dr < size and 0 <= c + dc < size
+                ]
+        self._nbrs_cache = cache
+        self._nbrs_cache_size = size
 
     def play(self, board: HexBoard) -> tuple:
         start = time.time()
@@ -86,6 +112,10 @@ class SmartPlayer(Player):
         opp   = 3 - pid
         N2    = size * size
         VL, VR, VT, VB = N2, N2+1, N2+2, N2+3
+
+        # Reconstruir el cache solo si el tamaño del tablero cambió
+        if size != self._nbrs_cache_size:
+            self._build_nbrs_cache(size)
 
         state = [row[:] for row in board.board]
 
@@ -145,8 +175,8 @@ class SmartPlayer(Player):
                 self._add_to_uf(uf_sim, mv[0], mv[1], curr, size, VL, VR, VT, VB, st_sim)
                 
                 child = MCTSNode(move=mv, player=curr, parent=node)
-                # Obtenemos los vacíos para el nuevo hijo
-                child.untried_moves = [(r, c) for r in range(size) for c in range(size) if st_sim[r][c] == 0]
+            
+                child.untried_moves = node.untried_moves[:]
                 node.children.append(child)
                 node = child
                 path.append(node)
@@ -190,26 +220,24 @@ class SmartPlayer(Player):
             return max(root.children, key=lambda c: c.visits).move
         return valid_empty[0]
 
-    def _get_nbrs(self, r, c, size):
-        ds = self._DIRS_EVEN if r % 2 == 0 else self._DIRS_ODD
-
-        return [(r + dr, c +  dc) for dr, dc in ds if 0 <= r + dr < size and 0 <= c + dc < size] 
-    
+    def _get_nbrs(self, r, c):
+        return self._nbrs_cache[(r, c)]
+        
     def _add_to_uf(self, uf, r, c, p, size, VL, VR, VT, VB, board):
         cell = r * size + c
 
         if p == 1:
             if c == 0:
                 uf.union(cell, VL)
-            if c == size -1:
+            if c == size - 1:
                 uf.union(cell, VR)
         else: 
             if r == 0:
                 uf.union(cell, VT)
-            if r == size -1:
+            if r == size - 1:
                 uf.union(cell, VB)
         
-        for nr, nc in self._get_nbrs(r, c, size):
+        for nr, nc in self._get_nbrs(r, c):
             if board[nr][nc] == p:
                 uf.union(cell, nr * size + nc)
     
@@ -219,14 +247,15 @@ class SmartPlayer(Player):
             state[r][c] = pid
             self._add_to_uf(uf_check, r, c, pid, size, VL, VR, VT, VB, state)
             state[r][c] = 0
-            if (pid == 1 and uf_check.find(VL) == uf_check.find(VR)) or ((pid == 2 and uf_check.find(VT) == uf_check.find(VB))):
-                return (r,c)
+            if (pid == 1 and uf_check.find(VL) == uf_check.find(VR)) or \
+               (pid == 2 and uf_check.find(VT) == uf_check.find(VB)):
+                return (r, c)
         return False
     
     def _rollout_pure(self, uf, board, size, player, VL, VR, VT, VB):
         empty_list = [(r, c) for r in range(size) for c in range(size) if board[r][c] == 0]
         random.shuffle(empty_list)
-        empty_set = set(empty_list) # Para remociones y búsquedas rápidas O(1)
+        empty_set = set(empty_list)
         
         roll_moves = []
         p1_roll = []
@@ -234,21 +263,18 @@ class SmartPlayer(Player):
         last_move = None
         empty_iter = iter(empty_list)
         
-        # Simulamos velozmente hasta asfixiar el tablero 
         while empty_set:
             mv = None
             
-            # 1. Chequeo de puente: ¿El movimiento anterior amenazó al jugador actual?
             if last_move is not None:
-                lr, lc = last_move # Desempaquetamos explícitamente
+                lr, lc = last_move
                 resp = self._detect_survey_bridge(size, board, player, lr, lc)
                 if resp and resp in empty_set:
-                    mv = resp # Movimiento forzado encontrado
+                    mv = resp
             
-            # 2. Si no hay amenaza de puente, sacamos el siguiente aleatorio
             if not mv:
                 mv = next(empty_iter)
-                while mv not in empty_set: # Saltamos los que ya jugamos forzadamente
+                while mv not in empty_set:
                     mv = next(empty_iter)
                     
             empty_set.remove(mv)
@@ -262,7 +288,6 @@ class SmartPlayer(Player):
             last_move = mv
             player = 3 - player
             
-        # Unificamos solo para el jugador 1 al finalizar
         for r, c in p1_roll:
             self._add_to_uf(uf, r, c, 1, size, VL, VR, VT, VB, board)
             
@@ -280,7 +305,6 @@ class SmartPlayer(Player):
         pass
 
     def _detect_survey_bridge(self, size, board, curr_p, r, c):
-        # r,c es un movimiento en una de las dos conexiones de uno de los tipos de puentes
         if self._valid_move(r-1, c+1, size) and self._valid_move(r+1, c, size) and board[r-1][c+1] == curr_p and board[r+1][c] == curr_p and board[r][c+1] == 0:
             return (r, c+1)
         if self._valid_move(r-1, c, size) and self._valid_move(r+1, c-1, size) and board[r-1][c] == curr_p and board[r+1][c-1] == curr_p and board[r][c-1] == 0:
@@ -289,8 +313,8 @@ class SmartPlayer(Player):
             return (r+1, c-1)
         if self._valid_move(r-1, c, size) and self._valid_move(r, c+1, size) and board[r-1][c] == curr_p and board[r][c+1] == curr_p and board[r-1][c+1] == 0:
             return (r-1, c+1)
-        if self._valid_move(r, c+1, size) and self._valid_move(r+1, c-1, size) and board[r][c+1] == curr_p and board[r+1][c-1] == curr_p and board[r + 1][c] == 0:
-            return (r + 1, c)
+        if self._valid_move(r, c+1, size) and self._valid_move(r+1, c-1, size) and board[r][c+1] == curr_p and board[r+1][c-1] == curr_p and board[r+1][c] == 0:
+            return (r+1, c)
         if self._valid_move(r-1, c+1, size) and self._valid_move(r, c-1, size) and board[r-1][c+1] == curr_p and board[r][c-1] == curr_p and board[r-1][c] == 0:
             return (r-1, c)
         return False

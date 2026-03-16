@@ -534,17 +534,6 @@ class SmartPlayer(Player):
 
     def _rollout(self, uf, board, size, player, VL, VR, VT, VB,
                  priors_by_player=None, max_prior_pid=1.0, max_prior_opp=1.0):
-        """
-        Rollout con terminacion temprana via UF incremental.
-
-        Despues de cada jugada añadimos la ficha al UF y chequeamos
-        si algun jugador ya conecto sus bordes — O(alpha) por jugada,
-        sin ningun board.clone(). En un tablero 11x11 a mitad del juego
-        el rollout termina en ~30 jugadas en vez de 121 -> 2-4x mas sims/s.
-
-        Orden de jugadas: biasado por prior propio de cada jugador.
-        Retorna (winner, {1: set_p1, 2: set_p2}) para el backprop AMAF.
-        """
         empty = [(r, c) for r in range(size) for c in range(size) if board[r][c] == 0]
 
         if not empty:

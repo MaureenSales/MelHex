@@ -49,7 +49,7 @@ class IncrementalUF:
 #  P  = prior de path-connection asignado al crear el nodo (fijo)
 # ─────────────────────────────────────────────────────────────────────────────
 
-RAVE_K = 300
+RAVE_K = 314
 C_PUCT = 0.8
 
 class MCTSNode:
@@ -545,7 +545,7 @@ class SmartPlayer(Player):
                 return sorted(
                     empty,
                     key=lambda m: -(pd.get(m, 0.0) + noise * random.random()),
-                )
+                ) # prior(r,c) + max_prior · Uniform(0,1)
             orders = {
                 p: iter(make_order(
                     priors_by_player.get(p, {}),

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List
 
 from board import HexBoard
-from custom_solution import SmartPlayer
+from MelHex.solution import SmartPlayer
 
 app = FastAPI(title="HEX SmartPlayer API")
 

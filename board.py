@@ -12,10 +12,8 @@ class HexBoard:
     """
     
     # Direcciones de adyacencia para sistema even-r layout
-    # Filas PARES (0, 2, 4...): vecinos hacia la izquierda
-    _DIRS_EVEN = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
-    # Filas IMPARES (1, 3, 5...): vecinos hacia la derecha
-    _DIRS_ODD = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
+    _DIRS_ODD = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
+    _DIRS_EVEN = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
     
     def __init__(self, size: int):
         """

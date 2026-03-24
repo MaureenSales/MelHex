@@ -87,8 +87,8 @@ class SmartPlayer(Player):
 
     def __init__(self, player_id):
         super().__init__(player_id)
-        self._DIRS_ODD  = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0),  (1, 1)]
-        self._DIRS_EVEN = [(-1,-1), (-1, 0), (0, -1), (0, 1), (1,-1),  (1, 0)]
+        self._DIRS_EVEN  = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0),  (1, 1)]
+        self._DIRS_ODD = [(-1,-1), (-1, 0), (0, -1), (0, 1), (1,-1),  (1, 0)]
         self._nbrs_cache      = {}
         self._nbrs_cache_size = -1
 
@@ -219,17 +219,16 @@ class SmartPlayer(Player):
                 curr  = 3 - curr
 
             # ROLLOUT con terminacion temprana via UF incremental
-            # Sin board.clone() — el UF detecta la victoria en O(alpha) por jugada.
             winner, roll_by_player = self._rollout(
                 uf_sim, st_sim, size, curr, VL, VR, VT, VB,
                 priors_by_player=priors_by_player,
                 max_prior_pid=max_prior_pid,
                 max_prior_opp=max_prior_opp)
 
-            # BACKPROP (AMAF corregido)
             p1_moves = set(roll_by_player[1])
             p2_moves = set(roll_by_player[2])
-
+            
+            # RETROPROPAGACIÓN
             for i in range(len(path) - 1, -1, -1):
                 nd = path[i]
                 if nd.player == 1: p1_moves.add(nd.move)
